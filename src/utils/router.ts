@@ -68,6 +68,8 @@ export const calculateTokenCount = (
 };
 
 const readConfigFile = async (filePath: string) => {
+  const requestedModel = req.body.model;
+
   try {
     await access(filePath);
     const content = await readFile(filePath, "utf8");
@@ -222,6 +224,28 @@ export const router = async (req: any, _res: any, context: any) => {
       model = await getUseModel(req, tokenCount, config, lastMessageUsage);
     }
     req.body.model = model;
+
+    try {
+      const providerName = typeof model === "string" && model.includes(",")
+        ? model.split(",")[0]
+        : config?.Providers?.find((provider: any) =>
+            provider.models?.some((item: string) => item === model)
+          )?.name;
+
+      req.log.debug(
+        {
+          upstreamModel: model,
+          upstreamProvider: providerName,
+          requestedModel,
+          tokenCount,
+          sessionId: req.sessionId,
+          agents: req.agents,
+        },
+        "selected upstream model"
+      );
+    } catch (logError) {
+      req.log.debug({ logError }, "failed to log upstream selection context");
+    }
   } catch (error: any) {
     req.log.error(`Error in router middleware: ${error.message}`);
     req.body.model = config.Router!.default;

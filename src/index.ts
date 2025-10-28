@@ -138,6 +138,54 @@ async function run(options: RunOptions = {}) {
     logger: loggerConfig,
   });
 
+  event.on("onError", (request, reply, error) => {
+    server.logger.warn(
+      {
+        reqId: request.id,
+        url: request.url,
+        method: request.method,
+        statusCode: reply?.statusCode,
+        upstreamModel: request.body?.model,
+        agents: request.agents,
+        sessionId: request.sessionId,
+        headers: request.headers,
+        errorMessage: error?.message,
+      },
+      "SSE stream error"
+    );
+  });
+
+  event.on("onSend", (request, reply, payload) => {
+    if (payload && typeof payload === "object" && payload.error) {
+      server.logger.debug(
+        {
+          reqId: request.id,
+          url: request.url,
+          method: request.method,
+          statusCode: reply?.statusCode,
+          upstreamModel: request.body?.model,
+          agents: request.agents,
+          sessionId: request.sessionId,
+          errorMessage: payload.error,
+        },
+        "payload contains error before send"
+      );
+    } else if (payload instanceof ReadableStream) {
+      server.logger.trace(
+        {
+          reqId: request.id,
+          url: request.url,
+          method: request.method,
+          statusCode: reply?.statusCode,
+          upstreamModel: request.body?.model,
+          agents: request.agents,
+          sessionId: request.sessionId,
+        },
+        "streaming response initiated"
+      );
+    }
+  });
+
   // Add global error handlers to prevent the service from crashing
   process.on("uncaughtException", (err) => {
     server.logger.error("Uncaught exception:", err);
