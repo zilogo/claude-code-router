@@ -1,0 +1,29 @@
+{
+  "LOG": true,
+  "HOST": "127.0.0.1",
+  "PORT": 3456,
+  "APIKEY": "sk-xxxxxxxxxxxxxxxx",
+  "API_TIMEOUT_MS": 300000,
+  "Providers": [
+    {
+      "name": "glm",
+      "api_base_url": "http://172.16.13.18:30007/v1/chat/completions",
+      "api_key": "none",
+      "models": [
+        "glm-4.7-fp8"
+      ]
+    },
+    {
+      "name": "qwen-vl",
+      "api_base_url": "http://172.16.10.3:30370/v1/chat/completions",
+      "api_key": "none",
+      "models": [
+        "Qwen3-VL-30B-A3B-Instruct"
+      ]
+    }
+  ],
+  "Router": {
+    "default": "glm,glm-4.7-fp8",
+    "image": "qwen-vl,Qwen3-VL-30B-A3B-Instruct"
+  }
+}
