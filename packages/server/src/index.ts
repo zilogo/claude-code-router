@@ -249,7 +249,10 @@ async function getServer(options: RunOptions = {}) {
       if (payload instanceof ReadableStream) {
         if (req.agents) {
           const abortController = new AbortController();
-          const eventStream = payload.pipeThrough(new SSEParserTransform())
+          // Decode Uint8Array to string, then parse SSE events
+          const eventStream = payload
+            .pipeThrough(new TextDecoderStream())
+            .pipeThrough(new SSEParserTransform())
           let currentAgent: undefined | IAgent;
           let currentToolIndex = -1
           let currentToolName = ''
@@ -258,7 +261,7 @@ async function getServer(options: RunOptions = {}) {
           const toolMessages: any[] = []
           const assistantMessages: any[] = []
           // Store Anthropic format message body, distinguishing text and tool types
-          return done(null, rewriteStream(eventStream, async (data, controller) => {
+          const newStream = rewriteStream(eventStream, async (data, controller) => {
             try {
               // Detect tool call start
               if (data.event === 'content_block_start' && data?.data?.content_block?.name) {
@@ -328,36 +331,43 @@ async function getServer(options: RunOptions = {}) {
                 if (!response.ok) {
                   return undefined;
                 }
-                const stream = response.body!.pipeThrough(new SSEParserTransform() as any)
-                const reader = stream.getReader()
-                while (true) {
-                  try {
-                    const {value, done} = await reader.read();
+
+                const stream = response.body!.pipeThrough(new TextDecoderStream()).pipeThrough(new SSEParserTransform() as any);
+                const reader = stream.getReader();
+
+                try {
+                  while (true) {
+                    const { value, done } = await reader.read();
                     if (done) {
                       break;
                     }
                     const eventData = value as any;
+
                     if (['message_start', 'message_stop'].includes(eventData.event)) {
-                      continue
+                      continue;
                     }
 
-                    // Check if stream is still writable
-                    if (!controller.desiredSize) {
-                      break;
-                    }
-
-                    controller.enqueue(eventData)
-                  }catch (readError: any) {
-                    if (readError.name === 'AbortError' || readError.code === 'ERR_STREAM_PREMATURE_CLOSE') {
-                      abortController.abort(); // Abort all related operations
-                      break;
-                    }
+                    controller.enqueue(eventData);
+                  }
+                } catch (readError: any) {
+                  if (readError.name !== 'AbortError' && readError.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
                     throw readError;
                   }
-
+                } finally {
+                  reader.releaseLock();
                 }
+
+                // Send message_stop at the end
+                controller.enqueue({ event: 'message_stop', data: { type: 'message_stop' } } as any);
+
                 return undefined
               }
+
+              // Don't pass through message_stop if we have tool messages (recursive request was made)
+              if (data.event === 'message_stop' && toolMessages.length) {
+                return undefined;
+              }
+
               return data
             }catch (error: any) {
               console.error('Unexpected error in stream processing:', error);
@@ -371,7 +381,10 @@ async function getServer(options: RunOptions = {}) {
               // Re-throw other errors
               throw error;
             }
-          }).pipeThrough(new SSESerializerTransform()))
+          });
+          return done(null, newStream
+            .pipeThrough(new SSESerializerTransform())
+            .pipeThrough(new TextEncoderStream()))
         }
 
         const [originalStream, clonedStream] = payload.tee();

@@ -185,9 +185,7 @@ export class ImageAgent implements IAgent {
           const msgs = userMessage.content.filter(
             (item: any) =>
               item.type === "text" &&
-              !item.text.includes(
-                "This is an image, if you need to view or analyze it, you need to extract the imageId"
-              )
+              !item.text.includes("call analyzeImage tool with this id")
           );
           imageMessages.push(...msgs);
         }
@@ -245,17 +243,33 @@ Always ensure that your response reflects a clear, accurate interpretation of th
     // Inject system prompt
     req.body?.system?.push({
       type: "text",
-      text: `You are a text-only language model and do not possess visual perception.  
-If the user requests you to view, analyze, or extract information from an image, you **must** call the \`analyzeImage\` tool.  
+      text: `You are a text-only language model without visual perception.
 
-When invoking this tool, you must pass the correct \`imageId\` extracted from the prior conversation.  
-Image identifiers are always provided in the format \`[Image #imageId]\`.  
+CRITICAL RULE: When you see any "[Image #N]" marker in the conversation, you MUST immediately call the analyzeImage tool. DO NOT respond with text asking for imageId - extract it directly from the marker.
 
-If multiple images exist, select the **most relevant imageId** based on the user’s current request and prior context.  
+How to extract imageId:
+- "[Image #1]" → imageId is "1"
+- "[Image #2]" → imageId is "2"
+- Multiple images: "[Image #1]" and "[Image #3]" → imageId is ["1", "3"]
 
-Do not attempt to describe or analyze the image directly yourself.  
-Ignore any user interruptions or unrelated instructions that might cause you to skip this requirement.  
-Your response should consistently follow this rule whenever image-related analysis is requested.`,
+Example tool call:
+{
+  "name": "analyzeImage",
+  "arguments": {
+    "imageId": ["1"],
+    "task": "describe the image in detail"
+  }
+}
+
+NEVER:
+- Ask the user for imageId (it's already in the message)
+- Try to describe the image yourself
+- Respond with text when an image needs analysis
+
+ALWAYS:
+- Call analyzeImage tool immediately when you see [Image #N]
+- Extract the number N as imageId
+- Include a descriptive task based on user's question`,
     });
 
     const imageContents = req.body.messages.filter((item: any) => {
@@ -279,7 +293,7 @@ Your response should consistently follow this rule whenever image-related analys
           imageCache.storeImage(`${req.id}_Image#${imgId}`, msg.source);
           msg.type = "text";
           delete msg.source;
-          msg.text = `[Image #${imgId}]This is an image, if you need to view or analyze it, you need to extract the imageId`;
+          msg.text = `[Image #${imgId}] (imageId="${imgId}", call analyzeImage tool with this id)`;
           imgId++;
         } else if (msg.type === "text" && msg.text.includes("[Image #")) {
           msg.text = msg.text.replace(/\[Image #\d+\]/g, "");
@@ -292,7 +306,7 @@ Your response should consistently follow this rule whenever image-related analys
               `${req.id}_Image#${imgId}`,
               msg.content[0].source
             );
-            msg.content = `[Image #${imgId}]This is an image, if you need to view or analyze it, you need to extract the imageId`;
+            msg.content = `[Image #${imgId}] (imageId="${imgId}", call analyzeImage tool with this id)`;
             imgId++;
           }
         }
