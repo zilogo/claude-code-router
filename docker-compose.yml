@@ -1,0 +1,16 @@
+services:
+  claude-code-router:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3456:3456"
+    environment:
+      - SERVICE_PORT=3456
+    volumes:
+      - ./config.json:/root/.claude-code-router/config.json
+      - ./ccr-logs:/root/.claude-code-router/logs
+      - ./ccr-presets:/root/.claude-code-router/presets
+      - ./ccr-plugins:/root/.claude-code-router/plugins
+    restart: unless-stopped
+
